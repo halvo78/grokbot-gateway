@@ -56,7 +56,36 @@ function normalizeStored(raw: Partial<StoredToken> & { id: string; name: string;
   };
 }
 
+export function noDiskTokens(): boolean {
+  return process.env.GROKBOT_NO_DISK_TOKENS === "1";
+}
+
+function tokensFromEnv(): TokenFile | null {
+  const raw = process.env.GROKBOT_TOKENS_JSON;
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw) as TokenFile;
+    if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) return emptyFile();
+    return { version: 1, tokens: parsed.tokens.map((t) => normalizeStored(t)) };
+  } catch {
+    return emptyFile();
+  }
+}
+
+let envTokenCache: TokenFile | null = null;
+let envTokenSource: string | null = null;
+
 export function loadTokenFile(): TokenFile {
+  const raw = process.env.GROKBOT_TOKENS_JSON;
+  const fromEnv = tokensFromEnv();
+  if (fromEnv) {
+    if (!envTokenCache || envTokenSource !== raw) {
+      envTokenCache = fromEnv;
+      envTokenSource = raw ?? null;
+    }
+    return { version: 1, tokens: envTokenCache.tokens.map((t) => ({ ...t })) };
+  }
+  if (noDiskTokens()) return emptyFile();
   try {
     const raw = fs.readFileSync(tokensPath(), "utf8");
     const parsed = JSON.parse(raw) as TokenFile;
@@ -68,6 +97,13 @@ export function loadTokenFile(): TokenFile {
 }
 
 function saveTokenFile(file: TokenFile): void {
+  if (tokensFromEnv()) {
+    envTokenCache = { version: 1, tokens: file.tokens.map((t) => ({ ...t })) };
+    return;
+  }
+  if (noDiskTokens()) {
+    throw new Error("Refusing to write tokens to disk: GROKBOT_NO_DISK_TOKENS=1. Provide GROKBOT_TOKENS_JSON via 1Password (op run --env) instead.");
+  }
   ensureGatewayHome();
   writeSecureFile(tokensPath(), JSON.stringify(file, null, 2) + "\n");
 }

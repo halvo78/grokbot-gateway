@@ -23,6 +23,8 @@ describe("tokens", () => {
 
   afterEach(() => {
     delete process.env.GROKBOT_GATEWAY_HOME;
+    delete process.env.GROKBOT_TOKENS_JSON;
+    delete process.env.GROKBOT_NO_DISK_TOKENS;
     fs.rmSync(home, { recursive: true, force: true });
   });
 
@@ -73,5 +75,18 @@ describe("tokens", () => {
   it("parses scopes and rejects unknown ones", () => {
     expect(parseScopes("*")).toContain("bots:send");
     expect(() => parseScopes("bots:launch-nukes")).toThrow(/Unknown scope/);
+  });
+
+  it("uses 1Password-injected tokens without touching disk", () => {
+    process.env.GROKBOT_TOKENS_JSON = JSON.stringify({ version: 1, tokens: [] });
+    const rec = createToken("onepassword-agent", parseScopes("readonly"));
+    expect(verifyToken(rec.token)?.id).toBe(rec.id);
+    expect(fs.existsSync(path.join(home, "tokens.json"))).toBe(false);
+  });
+
+  it("refuses disk writes in no-disk mode", () => {
+    process.env.GROKBOT_NO_DISK_TOKENS = "1";
+    expect(listTokens()).toEqual([]);
+    expect(() => createToken("should-fail")).toThrow(/Refusing to write tokens to disk/);
   });
 });
