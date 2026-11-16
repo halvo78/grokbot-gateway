@@ -89,4 +89,13 @@ describe("tokens", () => {
     expect(listTokens()).toEqual([]);
     expect(() => createToken("should-fail")).toThrow(/Refusing to write tokens to disk/);
   });
+
+  it("drops hashless records instead of crashing verify", () => {
+    process.env.GROKBOT_TOKENS_JSON = JSON.stringify({
+      version: 1,
+      tokens: [{ id: "bad-1", name: "legacy-cli-output", prefix: "gbgt_legacy" }]
+    });
+    expect(listTokens()).toEqual([]);
+    expect(verifyToken("gbgt_anything")).toBeNull();
+  });
 });

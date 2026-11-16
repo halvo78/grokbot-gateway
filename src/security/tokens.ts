@@ -40,12 +40,15 @@ function emptyFile(): TokenFile {
   return { version: 1, tokens: [] };
 }
 
-function normalizeStored(raw: Partial<StoredToken> & { id: string; name: string; hash: string }): StoredToken {
+function normalizeStored(raw: Partial<StoredToken> & { id?: unknown; name?: unknown; hash?: unknown }): StoredToken | null {
+  if (typeof raw.id !== "string" || !raw.id) return null;
+  if (typeof raw.name !== "string" || !raw.name) return null;
+  if (typeof raw.hash !== "string" || !/^[0-9a-f]{64}$/.test(raw.hash)) return null;
   return {
     id: raw.id,
     name: raw.name,
     hash: raw.hash,
-    prefix: raw.prefix ?? raw.hash.slice(0, 10),
+    prefix: typeof raw.prefix === "string" && raw.prefix ? raw.prefix : raw.hash.slice(0, 10),
     scopes: Array.isArray(raw.scopes) ? raw.scopes : [...READONLY_SCOPES],
     botAllowlist: Array.isArray(raw.botAllowlist) ? raw.botAllowlist : [],
     expiresAt: raw.expiresAt ?? null,
@@ -60,13 +63,27 @@ export function noDiskTokens(): boolean {
   return process.env.GROKBOT_NO_DISK_TOKENS === "1";
 }
 
+function cleanse(tokens: unknown[]): StoredToken[] {
+  const kept: StoredToken[] = [];
+  let dropped = 0;
+  for (const t of tokens) {
+    const rec = normalizeStored(t as Partial<StoredToken>);
+    if (rec) kept.push(rec);
+    else dropped += 1;
+  }
+  if (dropped > 0) {
+    console.error(`[grokbot-gateway] Dropped ${dropped} malformed token record(s) without valid id/name/hash.`);
+  }
+  return kept;
+}
+
 function tokensFromEnv(): TokenFile | null {
   const raw = process.env.GROKBOT_TOKENS_JSON;
   if (!raw) return null;
   try {
     const parsed = JSON.parse(raw) as TokenFile;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) return emptyFile();
-    return { version: 1, tokens: parsed.tokens.map((t) => normalizeStored(t)) };
+    return { version: 1, tokens: cleanse(parsed.tokens) };
   } catch {
     return emptyFile();
   }
@@ -90,7 +107,7 @@ export function loadTokenFile(): TokenFile {
     const raw = fs.readFileSync(tokensPath(), "utf8");
     const parsed = JSON.parse(raw) as TokenFile;
     if (!parsed || parsed.version !== 1 || !Array.isArray(parsed.tokens)) return emptyFile();
-    return { version: 1, tokens: parsed.tokens.map((t) => normalizeStored(t)) };
+    return { version: 1, tokens: cleanse(parsed.tokens) };
   } catch {
     return emptyFile();
   }
@@ -223,6 +240,7 @@ export function verifyToken(presented: string | null | undefined, now = Date.now
   const file = loadTokenFile();
   let matched: StoredToken | undefined;
   for (const rec of file.tokens) {
+    if (typeof rec.hash !== "string" || !rec.hash) continue;
     if (hashesMatch(rec.hash, hash)) matched = rec;
   }
   if (!matched) return null;

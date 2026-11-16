@@ -430,6 +430,7 @@ A token lets that agent message your bots as you. Prefer read-only unless it mus
           id: rec.id,
           name: rec.name,
           prefix: rec.prefix,
+          hash: rec.hash,
           scopes: rec.scopes,
           botAllowlist: rec.botAllowlist,
           expiresAt: rec.expiresAt,
