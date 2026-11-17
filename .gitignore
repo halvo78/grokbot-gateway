@@ -11,3 +11,5 @@ coverage/
 agent-tools/
 tmp/
 .grokbot-gateway-test/
+tokens.json
+config.json
